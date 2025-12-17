@@ -316,9 +316,8 @@ Bu yazılım özel mülkiyettir. Dağıtım, değiştirme veya ters mühendislik
 
 ## 📞 Destek
 
-- **Website:** https://www.mahfcorp.com/
-- **Email:** support@mahfcorp.com
-- **Forum:** https://forum.mahfcorp.com/
+- **Website:** https://www.mahfcorp.com/ (yakında)
+- **Email:** siyambaskursat01@icloud.com
 
 ---
 
@@ -340,3 +339,4 @@ Bu yazılım özel mülkiyettir. Dağıtım, değiştirme veya ters mühendislik
 
 
 **Mahf Corporation** - *Independent. Universal. Optimized.*
+
