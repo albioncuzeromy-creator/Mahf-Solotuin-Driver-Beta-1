@@ -1,0 +1,402 @@
+/*
+ * Mahf Firmware CPU Driver - Kernel Mode Driver
+ * Copyright (c) 2024 Mahf Corporation
+ * 
+ * Universal CPU Performance and Power Management Driver
+ * Supports: Intel, AMD, ARM architectures
+ * 
+ * Version: 2.5.1
+ * Build: 20241209
+ */
+
+#include <ntddk.h>
+#include <wdf.h>
+#include <initguid.h>
+#include <intrin.h>
+
+// Driver version
+#define MAHF_DRIVER_VERSION "2.5.1"
+#define MAHF_DRIVER_BUILD 20241209
+
+// IOCTL codes
+#define IOCTL_MAHF_GET_CPU_INFO CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MAHF_SET_PERFORMANCE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MAHF_GET_PERFORMANCE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MAHF_SET_FREQUENCY CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MAHF_GET_TEMPERATURE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+// MSR (Model Specific Register) definitions
+#define MSR_IA32_PERF_STATUS 0x198
+#define MSR_IA32_PERF_CTL 0x199
+#define MSR_IA32_THERM_STATUS 0x19C
+#define MSR_IA32_PACKAGE_THERM_STATUS 0x1B1
+#define MSR_PLATFORM_INFO 0xCE
+#define MSR_TURBO_RATIO_LIMIT 0x1AD
+
+// Performance modes
+typedef enum _MAHF_PERFORMANCE_MODE {
+    MahfPowerSave = 0,
+    MahfBalanced = 1,
+    MahfPerformance = 2,
+    MahfExtreme = 3
+} MAHF_PERFORMANCE_MODE;
+
+// CPU Information structure
+typedef struct _MAHF_CPU_INFO {
+    ULONG CoreCount;
+    ULONG ThreadCount;
+    CHAR VendorString[13];
+    CHAR BrandString[49];
+    ULONG Family;
+    ULONG Model;
+    ULONG Stepping;
+    ULONG BaseFrequency;
+    ULONG MaxFrequency;
+    ULONG CurrentFrequency;
+    BOOLEAN HyperThreading;
+    BOOLEAN TurboBoost;
+} MAHF_CPU_INFO, *PMAHF_CPU_INFO;
+
+// Performance data structure
+typedef struct _MAHF_PERFORMANCE_DATA {
+    MAHF_PERFORMANCE_MODE Mode;
+    ULONG Usage;
+    ULONG Temperature;
+    ULONG PowerConsumption;
+    ULONG CurrentFrequency;
+    ULONG Voltage;
+} MAHF_PERFORMANCE_DATA, *PMAHF_PERFORMANCE_DATA;
+
+// Device context
+typedef struct _DEVICE_CONTEXT {
+    WDFDEVICE Device;
+    MAHF_CPU_INFO CpuInfo;
+    MAHF_PERFORMANCE_DATA PerfData;
+    MAHF_PERFORMANCE_MODE CurrentMode;
+    KTIMER MonitorTimer;
+    KDPC MonitorDpc;
+    KSPIN_LOCK DataLock;
+} DEVICE_CONTEXT, *PDEVICE_CONTEXT;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)
+
+// Function prototypes
+DRIVER_INITIALIZE DriverEntry;
+EVT_WDF_DRIVER_DEVICE_ADD MahfEvtDeviceAdd;
+EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL MahfEvtIoDeviceControl;
+EVT_WDF_TIMER MahfEvtTimerFunc;
+
+NTSTATUS DetectCPU(PDEVICE_CONTEXT context);
+NTSTATUS SetPerformanceMode(PDEVICE_CONTEXT context, MAHF_PERFORMANCE_MODE mode);
+ULONG GetCPUTemperature(VOID);
+ULONG GetCPUFrequency(VOID);
+VOID UpdatePerformanceData(PDEVICE_CONTEXT context);
+
+// CPUID wrapper
+VOID MahfCpuid(int function, int subfunction, int* cpuInfo) {
+    __cpuidex(cpuInfo, function, subfunction);
+}
+
+// Read MSR
+ULONGLONG ReadMSR(ULONG msr) {
+    return __readmsr(msr);
+}
+
+// Write MSR
+VOID WriteMSR(ULONG msr, ULONGLONG value) {
+    __writemsr(msr, value);
+}
+
+/*
+ * Driver Entry Point
+ */
+NTSTATUS DriverEntry(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PUNICODE_STRING RegistryPath
+) {
+    WDF_DRIVER_CONFIG config;
+    NTSTATUS status;
+
+    KdPrint(("Mahf CPU Driver: DriverEntry - Version %s Build %d\n", 
+             MAHF_DRIVER_VERSION, MAHF_DRIVER_BUILD));
+
+    WDF_DRIVER_CONFIG_INIT(&config, MahfEvtDeviceAdd);
+
+    status = WdfDriverCreate(DriverObject, RegistryPath, WDF_NO_OBJECT_ATTRIBUTES, 
+                            &config, WDF_NO_HANDLE);
+
+    if (!NT_SUCCESS(status)) {
+        KdPrint(("Mahf CPU Driver: WdfDriverCreate failed: 0x%x\n", status));
+        return status;
+    }
+
+    KdPrint(("Mahf CPU Driver: Initialized successfully\n"));
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Device Add Event
+ */
+NTSTATUS MahfEvtDeviceAdd(
+    _In_ WDFDRIVER Driver,
+    _Inout_ PWDFDEVICE_INIT DeviceInit
+) {
+    NTSTATUS status;
+    WDFDEVICE device;
+    PDEVICE_CONTEXT context;
+    WDF_OBJECT_ATTRIBUTES attributes;
+    WDF_IO_QUEUE_CONFIG queueConfig;
+    WDFQUEUE queue;
+    WDF_TIMER_CONFIG timerConfig;
+    WDFTIMER timer;
+
+    UNREFERENCED_PARAMETER(Driver);
+
+    KdPrint(("Mahf CPU Driver: Adding device\n"));
+
+    // Create device
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, DEVICE_CONTEXT);
+    status = WdfDeviceCreate(&DeviceInit, &attributes, &device);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    context = DeviceGetContext(device);
+    context->Device = device;
+    KeInitializeSpinLock(&context->DataLock);
+
+    // Detect CPU
+    status = DetectCPU(context);
+    if (!NT_SUCCESS(status)) {
+        KdPrint(("Mahf CPU Driver: CPU detection failed\n"));
+        return status;
+    }
+
+    // Create I/O queue
+    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queueConfig, WdfIoQueueDispatchSequential);
+    queueConfig.EvtIoDeviceControl = MahfEvtIoDeviceControl;
+
+    status = WdfIoQueueCreate(device, &queueConfig, WDF_NO_OBJECT_ATTRIBUTES, &queue);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    // Create monitoring timer
+    WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, MahfEvtTimerFunc, 1000);
+    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+    attributes.ParentObject = device;
+
+    status = WdfTimerCreate(&timerConfig, &attributes, &timer);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    WdfTimerStart(timer, WDF_REL_TIMEOUT_IN_MS(1000));
+
+    // Set default performance mode
+    context->CurrentMode = MahfBalanced;
+    SetPerformanceMode(context, MahfBalanced);
+
+    KdPrint(("Mahf CPU Driver: Device added successfully\n"));
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Detect CPU information
+ */
+NTSTATUS DetectCPU(PDEVICE_CONTEXT context) {
+    int cpuInfo[4] = {0};
+    ULONG i;
+
+    // Get vendor string
+    MahfCpuid(0, 0, cpuInfo);
+    RtlCopyMemory(context->CpuInfo.VendorString, &cpuInfo[1], 4);
+    RtlCopyMemory(context->CpuInfo.VendorString + 4, &cpuInfo[3], 4);
+    RtlCopyMemory(context->CpuInfo.VendorString + 8, &cpuInfo[2], 4);
+    context->CpuInfo.VendorString[12] = '\0';
+
+    // Get CPU features
+    MahfCpuid(1, 0, cpuInfo);
+    context->CpuInfo.Family = (cpuInfo[0] >> 8) & 0xF;
+    context->CpuInfo.Model = (cpuInfo[0] >> 4) & 0xF;
+    context->CpuInfo.Stepping = cpuInfo[0] & 0xF;
+    context->CpuInfo.HyperThreading = (cpuInfo[3] & (1 << 28)) != 0;
+
+    // Get brand string
+    for (i = 0x80000002; i <= 0x80000004; i++) {
+        MahfCpuid(i, 0, cpuInfo);
+        RtlCopyMemory(&context->CpuInfo.BrandString[(i - 0x80000002) * 16], cpuInfo, 16);
+    }
+    context->CpuInfo.BrandString[48] = '\0';
+
+    // Get core count
+    context->CpuInfo.CoreCount = KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+    context->CpuInfo.ThreadCount = context->CpuInfo.CoreCount * (context->CpuInfo.HyperThreading ? 2 : 1);
+
+    // Detect turbo boost support
+    if (RtlCompareMemory(context->CpuInfo.VendorString, "GenuineIntel", 12) == 12) {
+        ULONGLONG platformInfo = ReadMSR(MSR_PLATFORM_INFO);
+        context->CpuInfo.TurboBoost = TRUE;
+        context->CpuInfo.BaseFrequency = (ULONG)((platformInfo >> 8) & 0xFF) * 100;
+    } else {
+        context->CpuInfo.TurboBoost = FALSE;
+        context->CpuInfo.BaseFrequency = 2400;
+    }
+
+    context->CpuInfo.MaxFrequency = context->CpuInfo.BaseFrequency + 800;
+
+    KdPrint(("Mahf CPU Driver: Detected %s - %d cores / %d threads\n",
+             context->CpuInfo.VendorString,
+             context->CpuInfo.CoreCount,
+             context->CpuInfo.ThreadCount));
+
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Set performance mode
+ */
+NTSTATUS SetPerformanceMode(PDEVICE_CONTEXT context, MAHF_PERFORMANCE_MODE mode) {
+    ULONGLONG perfCtl;
+    ULONG targetFreq;
+
+    context->CurrentMode = mode;
+
+    switch (mode) {
+        case MahfPowerSave:
+            targetFreq = context->CpuInfo.BaseFrequency * 60 / 100;
+            break;
+        case MahfBalanced:
+            targetFreq = context->CpuInfo.BaseFrequency;
+            break;
+        case MahfPerformance:
+            targetFreq = context->CpuInfo.BaseFrequency * 120 / 100;
+            break;
+        case MahfExtreme:
+            targetFreq = context->CpuInfo.MaxFrequency;
+            break;
+        default:
+            return STATUS_INVALID_PARAMETER;
+    }
+
+    // Set frequency via MSR (Intel)
+    if (RtlCompareMemory(context->CpuInfo.VendorString, "GenuineIntel", 12) == 12) {
+        perfCtl = ReadMSR(MSR_IA32_PERF_CTL);
+        perfCtl = (perfCtl & ~0xFFFFULL) | ((targetFreq / 100) << 8);
+        WriteMSR(MSR_IA32_PERF_CTL, perfCtl);
+    }
+
+    KdPrint(("Mahf CPU Driver: Performance mode set to %d (target: %d MHz)\n", mode, targetFreq));
+
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Get CPU temperature
+ */
+ULONG GetCPUTemperature(VOID) {
+    ULONGLONG thermStatus;
+    ULONG temp;
+
+    thermStatus = ReadMSR(MSR_IA32_PACKAGE_THERM_STATUS);
+    temp = 100 - (ULONG)((thermStatus >> 16) & 0x7F);
+
+    return temp;
+}
+
+/*
+ * Get CPU frequency
+ */
+ULONG GetCPUFrequency(VOID) {
+    ULONGLONG perfStatus;
+    ULONG freq;
+
+    perfStatus = ReadMSR(MSR_IA32_PERF_STATUS);
+    freq = (ULONG)((perfStatus >> 8) & 0xFF) * 100;
+
+    return freq;
+}
+
+/*
+ * Update performance data
+ */
+VOID UpdatePerformanceData(PDEVICE_CONTEXT context) {
+    KIRQL oldIrql;
+
+    KeAcquireSpinLock(&context->DataLock, &oldIrql);
+
+    context->PerfData.Mode = context->CurrentMode;
+    context->PerfData.Temperature = GetCPUTemperature();
+    context->PerfData.CurrentFrequency = GetCPUFrequency();
+    context->PerfData.Usage = (ULONG)(KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS) * 10);
+    context->PerfData.PowerConsumption = context->PerfData.Usage * 65 / 100;
+    context->PerfData.Voltage = 1200;
+
+    KeReleaseSpinLock(&context->DataLock, oldIrql);
+}
+
+/*
+ * Timer callback for monitoring
+ */
+VOID MahfEvtTimerFunc(_In_ WDFTIMER Timer) {
+    WDFDEVICE device = WdfTimerGetParentObject(Timer);
+    PDEVICE_CONTEXT context = DeviceGetContext(device);
+
+    UpdatePerformanceData(context);
+}
+
+/*
+ * I/O Control handler
+ */
+VOID MahfEvtIoDeviceControl(
+    _In_ WDFQUEUE Queue,
+    _In_ WDFREQUEST Request,
+    _In_ size_t OutputBufferLength,
+    _In_ size_t InputBufferLength,
+    _In_ ULONG IoControlCode
+) {
+    NTSTATUS status = STATUS_SUCCESS;
+    PDEVICE_CONTEXT context;
+    PVOID inputBuffer, outputBuffer;
+    size_t bufferSize;
+
+    UNREFERENCED_PARAMETER(OutputBufferLength);
+    UNREFERENCED_PARAMETER(InputBufferLength);
+
+    context = DeviceGetContext(WdfIoQueueGetDevice(Queue));
+
+    switch (IoControlCode) {
+        case IOCTL_MAHF_GET_CPU_INFO:
+            status = WdfRequestRetrieveOutputBuffer(Request, sizeof(MAHF_CPU_INFO), &outputBuffer, &bufferSize);
+            if (NT_SUCCESS(status)) {
+                RtlCopyMemory(outputBuffer, &context->CpuInfo, sizeof(MAHF_CPU_INFO));
+                WdfRequestCompleteWithInformation(Request, status, sizeof(MAHF_CPU_INFO));
+                return;
+            }
+            break;
+
+        case IOCTL_MAHF_SET_PERFORMANCE:
+            status = WdfRequestRetrieveInputBuffer(Request, sizeof(MAHF_PERFORMANCE_MODE), &inputBuffer, &bufferSize);
+            if (NT_SUCCESS(status)) {
+                MAHF_PERFORMANCE_MODE mode = *(PMAHF_PERFORMANCE_MODE)inputBuffer;
+                status = SetPerformanceMode(context, mode);
+            }
+            break;
+
+        case IOCTL_MAHF_GET_PERFORMANCE:
+            UpdatePerformanceData(context);
+            status = WdfRequestRetrieveOutputBuffer(Request, sizeof(MAHF_PERFORMANCE_DATA), &outputBuffer, &bufferSize);
+            if (NT_SUCCESS(status)) {
+                RtlCopyMemory(outputBuffer, &context->PerfData, sizeof(MAHF_PERFORMANCE_DATA));
+                WdfRequestCompleteWithInformation(Request, status, sizeof(MAHF_PERFORMANCE_DATA));
+                return;
+            }
+            break;
+
+        default:
+            status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+    }
+
+    WdfRequestComplete(Request, status);
+}

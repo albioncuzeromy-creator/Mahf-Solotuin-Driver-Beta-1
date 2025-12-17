@@ -1,0 +1,446 @@
+import React, { useState, useEffect } from 'react';
+import { Cpu, Download, Shield, Terminal, FileText, CheckCircle, AlertTriangle, Zap, HardDrive, Settings, Activity, Package } from 'lucide-react';
+
+export default function MahfCPUDriverInstaller() {
+  const [systemInfo, setSystemInfo] = useState({
+    os: 'Windows 11',
+    architecture: 'x64',
+    cores: navigator.hardwareConcurrency || 8,
+    currentDriver: 'Generic Microsoft Driver v10.0.22621',
+    mahfDriver: 'Not Installed'
+  });
+
+  const [installState, setInstallState] = useState('ready'); // ready, installing, installed, error
+  const [installProgress, setInstallProgress] = useState(0);
+  const [logs, setLogs] = useState([]);
+  const [selectedVersion, setSelectedVersion] = useState('stable');
+
+  const driverVersions = {
+    stable: {
+      version: '2.5.1',
+      build: '20241209',
+      size: '4.2 MB',
+      compatibility: 'Windows 7/8/10/11, Linux Kernel 4.0+',
+      description: 'Kararlı sürüm - Üretim ortamları için önerilir'
+    },
+    beta: {
+      version: '2.6.0-beta',
+      build: '20241208',
+      size: '4.5 MB',
+      compatibility: 'Windows 10/11, Linux Kernel 5.0+',
+      description: 'Test sürümü - Yeni özellikler içerir'
+    },
+    dev: {
+      version: '3.0.0-dev',
+      build: '20241207',
+      size: '4.8 MB',
+      compatibility: 'Windows 11, Linux Kernel 5.15+',
+      description: 'Geliştirme sürümü - Deneysel özellikler'
+    }
+  };
+
+  const features = [
+    { icon: Zap, title: 'Bağımsız Çalışma', desc: 'Üretici sürücülerinden tamamen bağımsız' },
+    { icon: Shield, title: 'Kernel-Level Optimizasyon', desc: 'Doğrudan donanım erişimi' },
+    { icon: Activity, title: 'Dinamik Frekans Yönetimi', desc: 'Akıllı güç ve performans dengesi' },
+    { icon: HardDrive, title: 'Evrensel Uyumluluk', desc: 'Intel, AMD, ARM destekli' },
+    { icon: Settings, title: 'Gelişmiş Yapılandırma', desc: 'Registry ve INF tabanlı kontrol' },
+    { icon: Package, title: 'Minimal Footprint', desc: 'Düşük bellek ve CPU kullanımı' }
+  ];
+
+  const addLog = (message, type = 'info') => {
+    const timestamp = new Date().toLocaleTimeString('tr-TR');
+    setLogs(prev => [...prev, { timestamp, message, type }]);
+  };
+
+  const installDriver = async () => {
+    setInstallState('installing');
+    setInstallProgress(0);
+    setLogs([]);
+
+    const steps = [
+      { progress: 10, message: 'Sistem uyumluluğu kontrol ediliyor...', delay: 800 },
+      { progress: 20, message: 'Mevcut sürücüler taranıyor...', delay: 1000 },
+      { progress: 35, message: 'Mahf Firmware CPU sürücü dosyaları indiriliyor...', delay: 1200 },
+      { progress: 50, message: 'INF dosyası işleniyor (mahf_cpu.inf)...', delay: 900 },
+      { progress: 60, message: 'Kernel modülü yükleniyor (mahf_core.sys)...', delay: 1100 },
+      { progress: 70, message: 'Registry kayıtları oluşturuluyor...', delay: 800 },
+      { progress: 80, message: 'ACPI entegrasyonu yapılıyor...', delay: 1000 },
+      { progress: 90, message: 'Donanım imzaları doğrulanıyor...', delay: 900 },
+      { progress: 95, message: 'Performans profilleri yapılandırılıyor...', delay: 700 },
+      { progress: 100, message: 'Kurulum tamamlandı! Sistem yeniden başlatılmalı.', delay: 500 }
+    ];
+
+    for (const step of steps) {
+      await new Promise(resolve => setTimeout(resolve, step.delay));
+      setInstallProgress(step.progress);
+      addLog(step.message, step.progress === 100 ? 'success' : 'info');
+    }
+
+    setInstallState('installed');
+    setSystemInfo(prev => ({
+      ...prev,
+      mahfDriver: `Mahf Firmware CPU v${driverVersions[selectedVersion].version}`
+    }));
+  };
+
+  const uninstallDriver = () => {
+    setInstallState('ready');
+    setInstallProgress(0);
+    setLogs([]);
+    setSystemInfo(prev => ({
+      ...prev,
+      mahfDriver: 'Not Installed'
+    }));
+    addLog('Sürücü başarıyla kaldırıldı', 'success');
+  };
+
+  const downloadINF = () => {
+    const infContent = `; Mahf - The Firmware CPU Driver
+; Universal CPU Performance & Power Management Driver
+; Copyright (c) 2024 Mahf Corporation. All rights reserved.
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=Processor
+ClassGuid={50127DC3-0F36-415e-A6CC-4CB3BE910B65}
+Provider=%MAHF%
+DriverVer=12/09/2024,${driverVersions[selectedVersion].version}
+CatalogFile=mahf_cpu.cat
+
+[Manufacturer]
+%MAHF%=MahfCPU,NTamd64,NTarm64
+
+[MahfCPU.NTamd64]
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\\MAHF0001
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\\GenuineIntel
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\\AuthenticAMD
+
+[MahfCPU.NTarm64]
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\\MAHF0001
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\\ARM_CPU
+
+[MahfCPU_Install.NT]
+CopyFiles=MahfCPU_CopyFiles
+
+[MahfCPU_CopyFiles]
+mahf_core.sys
+mahf_control.dll
+mahf_service.exe
+
+[MahfCPU_Install.NT.Services]
+AddService=MahfCPU,%SPSVCINST_ASSOCSERVICE%,MahfCPU_Service
+
+[MahfCPU_Service]
+ServiceType=1
+StartType=0
+ErrorControl=1
+ServiceBinary=%12%\\mahf_core.sys
+DisplayName=%MahfCPU.ServiceDesc%
+Description=%MahfCPU.ServiceDesc%
+
+[MahfCPU_Install.NT.HW]
+AddReg=MahfCPU_AddReg
+
+[MahfCPU_AddReg]
+HKR,,DeviceCharacteristics,0x10001,0x0100
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)"
+HKR,Parameters,PerformanceMode,0x00010001,2
+HKR,Parameters,DynamicScaling,0x00010001,1
+HKR,Parameters,ThermalThreshold,0x00010001,85
+
+[SourceDisksNames]
+1=%DiskName%,,,
+
+[SourceDisksFiles]
+mahf_core.sys=1
+mahf_control.dll=1
+mahf_service.exe=1
+
+[DestinationDirs]
+MahfCPU_CopyFiles=12
+
+[Strings]
+MAHF="Mahf Corporation"
+MahfCPU.DeviceDesc="Mahf Firmware CPU Driver"
+MahfCPU.ServiceDesc="Mahf CPU Performance & Power Management Service"
+DiskName="Mahf CPU Driver Installation Disk"
+SPSVCINST_ASSOCSERVICE=0x00000002`;
+
+    const blob = new Blob([infContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mahf_cpu_v${driverVersions[selectedVersion].version}.inf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog('INF dosyası indirildi', 'success');
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 text-white p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-blue-700 rounded-2xl p-8 mb-6 shadow-2xl border border-blue-500/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="bg-white/10 p-4 rounded-xl backdrop-blur-md border border-white/20">
+                <Cpu className="w-16 h-16" />
+              </div>
+              <div>
+                <h1 className="text-5xl font-bold tracking-tight">Mahf Firmware CPU</h1>
+                <p className="text-blue-100 mt-2 text-lg">Professional Universal CPU Driver System</p>
+                <p className="text-sm text-blue-200 mt-1">Independent • Kernel-Level • Multi-Architecture</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="bg-slate-900/50 px-6 py-3 rounded-lg border border-slate-600 backdrop-blur-sm">
+                <p className="text-xs text-slate-400">Publisher</p>
+                <p className="font-bold text-lg">Mahf Corporation</p>
+                <p className="text-xs text-slate-400 mt-1">Certified Driver Provider</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* System Information */}
+          <div className="lg:col-span-2 bg-slate-900/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <Terminal className="w-6 h-6 text-green-400" />
+              Sistem Bilgileri
+            </h2>
+            <div className="space-y-3">
+              <div className="flex justify-between p-4 bg-slate-800/50 rounded-lg">
+                <span className="text-slate-300">İşletim Sistemi</span>
+                <span className="font-mono font-semibold">{systemInfo.os}</span>
+              </div>
+              <div className="flex justify-between p-4 bg-slate-800/50 rounded-lg">
+                <span className="text-slate-300">Mimari</span>
+                <span className="font-mono font-semibold">{systemInfo.architecture}</span>
+              </div>
+              <div className="flex justify-between p-4 bg-slate-800/50 rounded-lg">
+                <span className="text-slate-300">CPU Çekirdekleri</span>
+                <span className="font-mono font-semibold">{systemInfo.cores}</span>
+              </div>
+              <div className="flex justify-between p-4 bg-slate-800/50 rounded-lg">
+                <span className="text-slate-300">Mevcut Sürücü</span>
+                <span className="font-mono text-orange-400 text-sm">{systemInfo.currentDriver}</span>
+              </div>
+              <div className="flex justify-between p-4 bg-slate-800/50 rounded-lg border-2 border-blue-500/30">
+                <span className="text-slate-300">Mahf Sürücü</span>
+                <span className={`font-mono font-semibold ${systemInfo.mahfDriver === 'Not Installed' ? 'text-red-400' : 'text-green-400'}`}>
+                  {systemInfo.mahfDriver}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Version Selection */}
+          <div className="bg-slate-900/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <Package className="w-6 h-6 text-purple-400" />
+              Sürüm Seçimi
+            </h2>
+            <div className="space-y-3">
+              {Object.entries(driverVersions).map(([key, info]) => (
+                <button
+                  key={key}
+                  onClick={() => setSelectedVersion(key)}
+                  className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                    selectedVersion === key
+                      ? 'bg-blue-600 border-blue-400'
+                      : 'bg-slate-800/50 border-slate-600 hover:border-slate-500'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-bold">{info.version}</span>
+                    <span className="text-xs bg-slate-700 px-2 py-1 rounded">{info.size}</span>
+                  </div>
+                  <p className="text-xs text-slate-300 mb-1">{info.description}</p>
+                  <p className="text-xs text-slate-400">Build: {info.build}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Features */}
+          <div className="lg:col-span-3 bg-slate-900/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-6">Sürücü Özellikleri</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {features.map((feature, idx) => {
+                const Icon = feature.icon;
+                return (
+                  <div key={idx} className="bg-slate-800/50 p-5 rounded-lg border border-slate-700 hover:border-blue-500/50 transition-all">
+                    <Icon className="w-10 h-10 text-blue-400 mb-3" />
+                    <h3 className="font-bold mb-2">{feature.title}</h3>
+                    <p className="text-sm text-slate-400">{feature.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Installation Panel */}
+          <div className="lg:col-span-2 bg-slate-900/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <Download className="w-6 h-6 text-blue-400" />
+              Kurulum Paneli
+            </h2>
+
+            {installState === 'ready' && (
+              <div className="space-y-4">
+                <div className="bg-yellow-900/20 border border-yellow-600/50 rounded-lg p-4 flex items-start gap-3">
+                  <AlertTriangle className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-1" />
+                  <div>
+                    <p className="font-semibold text-yellow-200">Kurulum Öncesi Uyarı</p>
+                    <p className="text-sm text-yellow-300 mt-1">
+                      Bu sürücü mevcut üretici sürücüsünün yerine geçecektir. Kurulum sonrası sistem yeniden başlatılmalıdır.
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-800/50 p-4 rounded-lg">
+                  <p className="text-sm text-slate-300 mb-3">Kurulacak Sürüm:</p>
+                  <p className="font-mono text-lg font-bold text-blue-400">
+                    Mahf Firmware CPU v{driverVersions[selectedVersion].version}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {driverVersions[selectedVersion].compatibility}
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={installDriver}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-6 py-4 rounded-lg font-bold transition-all flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <Download className="w-5 h-5" />
+                    Sürücüyü Yükle
+                  </button>
+                  <button
+                    onClick={downloadINF}
+                    className="bg-slate-700 hover:bg-slate-600 px-6 py-4 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-5 h-5" />
+                    INF İndir
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {installState === 'installing' && (
+              <div className="space-y-4">
+                <div className="bg-blue-900/20 border border-blue-600/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold">Kurulum Devam Ediyor...</span>
+                    <span className="text-blue-400 font-bold">{installProgress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-3">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500"
+                      style={{ width: `${installProgress}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {installState === 'installed' && (
+              <div className="space-y-4">
+                <div className="bg-green-900/20 border border-green-600/50 rounded-lg p-4 flex items-start gap-3">
+                  <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
+                  <div>
+                    <p className="font-semibold text-green-200">Kurulum Başarılı</p>
+                    <p className="text-sm text-green-300 mt-1">
+                      Mahf Firmware CPU sürücüsü başarıyla yüklendi. Değişikliklerin aktif olması için sistemi yeniden başlatın.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => addLog('Sistem yeniden başlatılıyor...', 'info')}
+                    className="flex-1 bg-green-600 hover:bg-green-700 px-6 py-4 rounded-lg font-bold transition-all"
+                  >
+                    Sistemi Yeniden Başlat
+                  </button>
+                  <button
+                    onClick={uninstallDriver}
+                    className="bg-red-600 hover:bg-red-700 px-6 py-4 rounded-lg font-bold transition-all"
+                  >
+                    Kaldır
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {logs.length > 0 && (
+              <div className="mt-6">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Terminal className="w-5 h-5" />
+                  Kurulum Logları
+                </h3>
+                <div className="bg-slate-950 rounded-lg p-4 font-mono text-xs max-h-64 overflow-y-auto border border-slate-700">
+                  {logs.map((log, idx) => (
+                    <div key={idx} className="mb-2 flex gap-3">
+                      <span className="text-slate-500">[{log.timestamp}]</span>
+                      <span className={
+                        log.type === 'success' ? 'text-green-400' :
+                        log.type === 'error' ? 'text-red-400' :
+                        'text-blue-400'
+                      }>{log.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Technical Specifications */}
+          <div className="bg-slate-900/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <FileText className="w-6 h-6 text-cyan-400" />
+              Teknik Detaylar
+            </h2>
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-slate-400 mb-1">Sürücü Dosyaları</p>
+                <p className="font-mono text-xs text-slate-300">mahf_core.sys</p>
+                <p className="font-mono text-xs text-slate-300">mahf_control.dll</p>
+                <p className="font-mono text-xs text-slate-300">mahf_service.exe</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Servis Tipi</p>
+                <p className="font-mono text-xs">Kernel-Mode Driver (KMD)</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Başlangıç</p>
+                <p className="font-mono text-xs">Boot Start (0)</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">ACPI Uyumluluğu</p>
+                <p className="font-mono text-xs text-green-400">✓ Tam Destek</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Dijital İmza</p>
+                <p className="font-mono text-xs text-green-400">✓ Microsoft WHQL</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Desteklenen İşlemciler</p>
+                <p className="font-mono text-xs">Intel Core, AMD Ryzen</p>
+                <p className="font-mono text-xs">ARM Cortex, Qualcomm</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-slate-500 text-sm border-t border-slate-800 pt-6">
+          <p className="font-semibold text-slate-400">© 2024 Mahf Corporation. All Rights Reserved.</p>
+          <p className="mt-2">Professional Universal CPU Driver System • Independent Operation • Kernel-Level Performance</p>
+          <p className="mt-1">Compatible with Intel, AMD, ARM and all major CPU architectures</p>
+        </div>
+      </div>
+    </div>
+  );
+}

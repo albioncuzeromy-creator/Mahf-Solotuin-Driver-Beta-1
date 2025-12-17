@@ -1,0 +1,167 @@
+; Mahf Firmware CPU Driver - Windows Installation Information File
+; Copyright (c) 2024 Mahf Corporation. All rights reserved.
+; Version: 2.5.1
+; Date: 12/09/2024
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=Processor
+ClassGuid={50127DC3-0F36-415e-A6CC-4CB3BE910B65}
+Provider=%MAHF%
+DriverVer=12/09/2024,2.5.1.0
+CatalogFile=mahf_cpu.cat
+PnpLockdown=1
+
+[SourceDisksNames]
+1=%DiskName%,,,""
+
+[SourceDisksFiles]
+mahf_core.sys=1
+mahf_control.dll=1
+mahf_service.exe=1
+
+[DestinationDirs]
+DefaultDestDir=13
+MahfCPU_CopyFiles_System=12
+MahfCPU_CopyFiles_Dll=11
+MahfCPU_CopyFiles_Service=11
+
+[Manufacturer]
+%MAHF%=MahfCPU,NTamd64.10.0...22000,NTarm64.10.0...22000
+
+; Windows 11 x64
+[MahfCPU.NTamd64.10.0...22000]
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\MAHF0001
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\GenuineIntel
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\AuthenticAMD
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\QCOM8180
+
+; Windows 11 ARM64
+[MahfCPU.NTarm64.10.0...22000]
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\MAHF0001
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\QCOM8180
+%MahfCPU.DeviceDesc%=MahfCPU_Install,ACPI\ARM_CPU
+
+; Installation Section
+[MahfCPU_Install.NT]
+CopyFiles=MahfCPU_CopyFiles_System,MahfCPU_CopyFiles_Dll,MahfCPU_CopyFiles_Service
+AddReg=MahfCPU_AddReg
+
+[MahfCPU_CopyFiles_System]
+mahf_core.sys,,,0x00000040
+
+[MahfCPU_CopyFiles_Dll]
+mahf_control.dll,,,0x00000040
+
+[MahfCPU_CopyFiles_Service]
+mahf_service.exe,,,0x00000040
+
+; Registry Settings
+[MahfCPU_AddReg]
+; Main Driver Settings
+HKR,,DeviceCharacteristics,0x10001,0x0100
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GR;;;WD)"
+
+; Performance Parameters
+HKR,Parameters,PerformanceMode,0x00010001,2
+HKR,Parameters,DynamicScaling,0x00010001,1
+HKR,Parameters,ThermalThreshold,0x00010001,85
+HKR,Parameters,PowerLimit,0x00010001,65
+HKR,Parameters,BoostEnabled,0x00010001,1
+HKR,Parameters,CoreParking,0x00010001,1
+
+; Frequency Settings (in MHz)
+HKR,Parameters\Frequency,MinFrequency,0x00010001,800
+HKR,Parameters\Frequency,MaxFrequency,0x00010001,5000
+HKR,Parameters\Frequency,TurboFrequency,0x00010001,5500
+
+; Voltage Settings (in mV)
+HKR,Parameters\Voltage,CoreVoltage,0x00010001,1200
+HKR,Parameters\Voltage,UndervolOffset,0x00010001,0
+HKR,Parameters\Voltage,AdaptiveVoltage,0x00010001,1
+
+; Thermal Settings
+HKR,Parameters\Thermal,CriticalTemp,0x00010001,100
+HKR,Parameters\Thermal,ThrottleTemp,0x00010001,85
+HKR,Parameters\Thermal,TargetTemp,0x00010001,75
+HKR,Parameters\Thermal,FanCurve,0x00010001,2
+
+; Power Management
+HKR,Parameters\Power,C1EEnabled,0x00010001,1
+HKR,Parameters\Power,C6Enabled,0x00010001,1
+HKR,Parameters\Power,SpeedStepEnabled,0x00010001,1
+HKR,Parameters\Power,TurboBoostEnabled,0x00010001,1
+
+; Advanced Features
+HKR,Parameters\Advanced,HyperThreading,0x00010001,1
+HKR,Parameters\Advanced,VirtualizationTech,0x00010001,1
+HKR,Parameters\Advanced,PrefetcherEnabled,0x00010001,1
+HKR,Parameters\Advanced,CacheOptimization,0x00010001,1
+
+[MahfCPU_Install.NT.Services]
+AddService=MahfCPU,%SPSVCINST_ASSOCSERVICE%,MahfCPU_Service_Install
+AddService=MahfService,,MahfService_Install
+
+; Kernel Driver Service
+[MahfCPU_Service_Install]
+ServiceType=1                  ; SERVICE_KERNEL_DRIVER
+StartType=0                    ; SERVICE_BOOT_START
+ErrorControl=1                 ; SERVICE_ERROR_NORMAL
+ServiceBinary=%12%\mahf_core.sys
+DisplayName=%MahfCPU.ServiceDesc%
+Description=%MahfCPU.ServiceDesc%
+LoadOrderGroup=System Bus Extender
+AddReg=MahfCPU_Service_AddReg
+
+[MahfCPU_Service_AddReg]
+HKR,Parameters,DebugLevel,0x00010001,0
+HKR,Parameters,LogEnabled,0x00010001,0
+
+; Background Service
+[MahfService_Install]
+ServiceType=0x10               ; SERVICE_WIN32_OWN_PROCESS
+StartType=2                    ; SERVICE_AUTO_START
+ErrorControl=1                 ; SERVICE_ERROR_NORMAL
+ServiceBinary=%11%\mahf_service.exe
+DisplayName=%MahfService.ServiceDesc%
+Description=%MahfService.ServiceDesc%
+Dependencies=MahfCPU
+
+[MahfCPU_Install.NT.HW]
+AddReg=MahfCPU_HW_AddReg
+
+[MahfCPU_HW_AddReg]
+HKR,,DeviceCharacteristics,0x10001,0x0100
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GR;;;WD)"
+
+; Software Registry Settings
+[MahfCPU_Install.NT.Software]
+AddReg=MahfCPU_Software_AddReg
+
+[MahfCPU_Software_AddReg]
+HKLM,SOFTWARE\Mahf\CPU,Version,0x00000000,"2.5.1"
+HKLM,SOFTWARE\Mahf\CPU,InstallDate,0x00000000,%DATE%
+HKLM,SOFTWARE\Mahf\CPU,InstallPath,0x00000000,%11%
+HKLM,SOFTWARE\Mahf\CPU,ControlPanelPath,0x00000000,%11%\MahfControlPanel.exe
+
+; Uninstall Information
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MahfCPU,DisplayName,0x00000000,"Mahf Firmware CPU Driver"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MahfCPU,DisplayVersion,0x00000000,"2.5.1"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MahfCPU,Publisher,0x00000000,"Mahf Corporation"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MahfCPU,UninstallString,0x00000000,%11%\mahf_uninstall.exe
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MahfCPU,DisplayIcon,0x00000000,%11%\mahf_service.exe
+
+; Wdf Section
+[MahfCPU_Install.NT.Wdf]
+KmdfService=MahfCPU,MahfCPU_wdfsect
+
+[MahfCPU_wdfsect]
+KmdfLibraryVersion=1.33
+
+[Strings]
+MAHF="Mahf Corporation"
+MahfCPU.DeviceDesc="Mahf Firmware CPU Driver"
+MahfCPU.ServiceDesc="Mahf CPU Performance and Power Management Driver"
+MahfService.ServiceDesc="Mahf CPU Background Service"
+DiskName="Mahf CPU Driver Installation Disk"
+SPSVCINST_ASSOCSERVICE=0x00000002
