@@ -1,3 +1,6 @@
+Daha İlk Prototip Olduğu İçin Tüm Her İstediğinizi Gerçekleştirmeyebilir Ama Hala Daha Geliştiriyoruz...
+Anlayışınız İçin Teşekkürler...
+
 # Mahf Firmware CPU Driver
 
 ## Universal CPU Performance & Power Management Driver
@@ -334,5 +337,6 @@ Bu yazılım özel mülkiyettir. Dağıtım, değiştirme veya ters mühendislik
 - Gerçek zamanlı izleme
 
 ---
+
 
 **Mahf Corporation** - *Independent. Universal. Optimized.*
